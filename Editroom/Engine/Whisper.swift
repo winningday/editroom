@@ -127,7 +127,7 @@ enum Whisper {
     // MARK: Hearing
 
     /// Every word in the file's sound, with its time. Nil if Whisper couldn't run.
-    static func transcribe(_ url: URL, with install: Install) async -> Transcript? {
+    static func transcribe(_ url: URL, with install: Install, language override: String? = nil) async -> Transcript? {
         let fm = FileManager.default
         let work = fm.temporaryDirectory.appendingPathComponent("editroom-whisper-\(UUID().uuidString)", isDirectory: true)
         try? fm.createDirectory(at: work, withIntermediateDirectories: true)
@@ -137,7 +137,7 @@ enum Whisper {
         guard (try? await AVURLAsset(url: url).loadTracks(withMediaType: .audio).first) != nil else { return Transcript(words: [], language: "") }
         guard await writeWAV(from: url, to: wav) else { return nil }
 
-        let lang = language
+        let lang = override ?? language
         let zh = lang == "zh" || lang.hasPrefix("zh")
         // Asked for in Simplified Chinese, the way Whisper is nudged into writing it.
         let prompt = zh ? "以下是普通话的句子，使用简体中文。" : nil

@@ -308,6 +308,8 @@ struct EditroomApp: App {
                 Button("Add Audio Track") { model.addTrack(.audio) }
             }
             CommandMenu("Subtitles") {
+                Button("Translate and Dub…") { model.showDub = true }
+                Divider()
                 Button("Import Subtitles (SRT)…") { model.importSubtitlesFromPanel() }
                 Divider()
                 Button("Export Subtitles (SRT)…") { model.exportSubtitles(.srt) }

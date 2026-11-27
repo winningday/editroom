@@ -146,6 +146,8 @@ final class EditorModel: ObservableObject {
     @Published private(set) var fileURL: URL?
     @Published private(set) var isDirty = false
     @Published var showExport = false
+    /// Subtitles › Translate and Dub…
+    @Published var showDub = false
     @Published var showAgents = false
     /// Playback starts over from the beginning when it reaches the end.
     @Published var loop = UserDefaults.standard.bool(forKey: "loopPlayback") {

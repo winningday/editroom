@@ -337,6 +337,8 @@ struct Project: Codable, Equatable {
     var subtitleRevision: UUID?
     /// Cameras of the same session, synced by their sound (see Angles.swift).
     var angleGroups: [AngleGroup]?
+    /// This lesson's trip through the translation and dubbing pipeline (see DubJob.swift).
+    var dubJob: DubJob?
 }
 
 struct Marker: Codable, Hashable, Identifiable {
