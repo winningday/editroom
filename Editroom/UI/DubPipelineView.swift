@@ -23,8 +23,7 @@ struct DubPipelineView: View {
             Text("Chinese from this edit goes to the translator. Claude cleans it up and translates it by the translator's own rules, and ElevenLabs voices it. The subtitles and the voice come back onto the timeline. You check the Chinese, the English and the first lines of the voice before each paid step.")
                 .font(.system(size: 11.5)).foregroundStyle(Theme.textDim).fixedSize(horizontal: false, vertical: true)
 
-            let missing = pipeline.missing()
-            if !missing.isEmpty { setup(missing) }
+            if !pipeline.missingTools.isEmpty { setup(pipeline.missingTools) }
 
             steps
 
@@ -60,7 +59,7 @@ struct DubPipelineView: View {
             }
             HStack {
                 if job != nil, pipeline.running == nil {
-                    Button("Forget This Lesson") { model.mutate { $0.dubJob = nil } }
+                    Button("Forget This Lesson") { model.setDubJob(nil) }
                         .buttonStyle(.plain).font(.system(size: 11.5)).foregroundStyle(Theme.textFaint)
                 }
                 Spacer()
@@ -70,6 +69,8 @@ struct DubPipelineView: View {
         .padding(22)
         .frame(width: 560)
         .background(Theme.panel)
+        .onAppear { pipeline.refreshMissing() }
+        .onChange(of: folder) { _, _ in pipeline.refreshMissing() }
     }
 
     // MARK: Parts
@@ -138,7 +139,7 @@ struct DubPipelineView: View {
                 HStack(spacing: 10) {
                     if let title {
                         PillButton(title: title, prominent: true) { Task { await pipeline.next(model) } }
-                            .disabled(!pipeline.missing().isEmpty)
+                            .disabled(!pipeline.missingTools.isEmpty)
                     }
                     if stage == .reviewCleanup || stage == .reviewTranslation {
                         PillButton(title: "Show Subtitle List", prominent: false) {
@@ -152,7 +153,9 @@ struct DubPipelineView: View {
                         PillButton(title: "Play the Start", prominent: false) { model.seek(to: 0); model.play(); dismiss() }
                     }
                     if stage == .deliver {
-                        PillButton(title: "Skip", prominent: false) { model.mutate { $0.dubJob?.stage = .done } }
+                        PillButton(title: "Skip", prominent: false) {
+                            if var j = model.project.dubJob { j.stage = .done; model.setDubJob(j) }
+                        }
                     }
                 }
             }

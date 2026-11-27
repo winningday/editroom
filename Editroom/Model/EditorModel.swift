@@ -872,6 +872,19 @@ final class EditorModel: ObservableObject {
         didChange()
     }
 
+    /// The lesson's dubbing progress (DubJob), kept out of undo: Undo during a long translation or dub can't
+    /// take the lesson back a step or lose it. Every saved state gets the same job.
+    func setDubJob(_ job: DubJob?) {
+        var p = project
+        p.dubJob = job
+        guard p != project else { return }
+        for i in undoStack.indices { undoStack[i].dubJob = job }
+        for i in redoStack.indices { redoStack[i].dubJob = job }
+        if liveSnapshot != nil { liveSnapshot!.dubJob = job }
+        project = p
+        isDirty = true
+    }
+
     private func didChange() {
         if !captionSelection.isEmpty {
             let ids = Set(captionBlocks.map(\.id))

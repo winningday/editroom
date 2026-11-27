@@ -38,8 +38,12 @@ struct DubJob: Codable, Hashable {
     var stage: DubStage = .cleanup
     /// The edit as it was when the Chinese was sent: the dub only lines up with this cut.
     var cutStamp: String
-    /// The English as the translator delivered it, to find what Maya changed.
+    /// The English and the cleaned Chinese as they showed on the timeline when they came back, to find
+    /// exactly what Maya changed (and nothing the timeline couldn't place).
     var deliveredEnglish: [SRTCue.Saved]?
+    var deliveredClean: [SRTCue.Saved]?
+    /// Maya changed the cleaned Chinese at gate A (the translator mirrors her wording).
+    var mayaEditedClean: Bool?
     /// What Claude said last (the cleanup report is in Chinese, for Maya).
     var lastReport: String?
 
@@ -78,7 +82,9 @@ enum DubPlan {
         var h: UInt64 = 0xcbf29ce484222325
         func mix(_ s: String) { for b in s.utf8 { h = (h ^ UInt64(b)) &* 0x100000001b3 } }
         let order = p.clips.sorted { ($0.start, $0.id.uuidString) < ($1.start, $1.id.uuidString) }
-        for c in order where c.kind != .text {
+        // The dub itself isn't part of the cut it's timed to.
+        func isDub(_ c: Clip) -> Bool { p.asset(c.assetID).map { $0.path.contains("/dub/") && $0.path.hasSuffix("_dub.wav") } ?? false }
+        for c in order where c.kind != .text && !isDub(c) {
             mix(String(format: "%@|%@|%.3f|%.3f|%.3f|%.4f|", c.kind.rawValue, c.assetID?.uuidString ?? "-", c.start, c.duration, c.sourceStart, c.speed))
             if let r = c.ramp { mix(String(format: "r%.3f,%.3f,%.3f,%.3f,%.3f,%.3f|", r.inFrom, r.inTo, r.outFrom, r.outTo, r.startSpeed, r.endSpeed)) }
         }
@@ -125,6 +131,21 @@ enum DubPlan {
         }
         s = s.trimmingCharacters(in: CharacterSet(charactersIn: " _-"))
         return s.isEmpty ? "lesson" : s
+    }
+}
+
+extension DubPlan {
+    /// The file's cues with Maya's edits made: each edited line found by its time and changed or taken out.
+    /// Lines the timeline couldn't show are kept as they were.
+    static func apply(_ edits: [SubtitleEdit], to file: [SRTCue]) -> [SRTCue] {
+        var out = file
+        var gone = Set<Int>()
+        for e in edits {
+            guard let k = out.indices.filter({ !gone.contains($0) && abs(out[$0].start - e.start) < 0.5 })
+                .min(by: { abs(out[$0].start - e.start) < abs(out[$1].start - e.start) }) else { continue }
+            if e.after.isEmpty { gone.insert(k) } else { out[k].text = e.after }
+        }
+        return out.indices.filter { !gone.contains($0) }.map { out[$0] }
     }
 }
 
