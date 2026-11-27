@@ -106,6 +106,19 @@ struct InspectorView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            InspectorSection("Subtitles") {
+                if let layers = model.project.subtitleLayers, !layers.isEmpty {
+                    MenuField(label: "Showing: " + (model.project.activeSubtitleLayer?.name ?? "What's heard")) {
+                        Button("What's heard") { model.showSubtitleLayer(nil) }
+                        ForEach(layers) { l in Button(l.name) { model.showSubtitleLayer(l.id) } }
+                    }
+                }
+                SubtitleList(model: model, clock: model.clock, blocks: blocks)
+                Text("Click a time to go there. Type to fix a line; Return keeps it, Escape puts it back. Subtitles › Export writes them out as SRT for translating.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.textFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             InspectorSection("Style") {
                 ParamRow(icon: .symbol("textformat.size"), label: "Size", value: track.style.size, range: CaptionStyle.sizeRange,
                          format: { "\(Int($0.rounded()))" },
@@ -2091,7 +2104,7 @@ private struct CaptionEye: View {
 
 /// A caption's words, retyped in place: set on Return or when the field is left; Escape puts them back.
 /// Double-clicking a caption on the timeline puts the cursor here.
-private struct CaptionTextField: View {
+struct CaptionTextField: View {
     @ObservedObject var model: EditorModel
     let block: CaptionBlock
     @State private var text = ""

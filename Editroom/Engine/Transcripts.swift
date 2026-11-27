@@ -7,18 +7,20 @@ import Speech
 /// What's said in a file: each word with its time in the file. Made once per file on this Mac (Apple's
 /// on-device speech recognition), in the background after import, and kept on disk, so Magic and Media
 /// search can use it at once and nothing is sent anywhere.
-struct Transcript: Codable, Equatable {
-    struct Word: Codable, Equatable {
+struct Transcript: Codable, Hashable {
+    struct Word: Codable, Hashable {
         var start: Double
         var end: Double
         var text: String
+        /// Starts a subtitle line of its own (words brought in from an SRT); nil for words that were heard.
+        var cue: Bool? = nil
     }
 
     var words: [Word]
     var language: String
 
     var isEmpty: Bool { words.isEmpty }
-    var text: String { words.map(\.text).joined(separator: " ") }
+    var text: String { SubtitleText.join(words.map(\.text)) }
 
     /// Stretches of talking: words closer than `gap` seconds run together.
     func speech(gap: Double = 0.45) -> [(start: Double, end: Double)] {
@@ -127,10 +129,19 @@ final class Transcripts: ObservableObject {
         if working == url { stale.insert(url.path) }
     }
 
-    /// Speech recognition on this Mac needs macOS 26.
+    /// Hearing speech needs Whisper installed on this Mac, or macOS 26 (Apple's own speech recognition).
     static var available: Bool {
+        if Whisper.engineChoice != "apple", Whisper.find() != nil { return true }
+        if Whisper.engineChoice == "whisper" { return false }
         if #available(macOS 26, *) { return true }
         return false
+    }
+
+    /// Hears a file again (after changing the language or switching to Whisper): its saved transcript goes.
+    func redo(_ url: URL) {
+        try? FileManager.default.removeItem(at: file(for: url))
+        forget(url)
+        make(url, soon: true)
     }
 
     func transcript(for url: URL) -> Transcript? { made[url.path] ?? load(url) }
@@ -231,6 +242,9 @@ final class Transcripts: ObservableObject {
 
     /// Every word in the file's sound, with its time. Nil if it couldn't be read; empty if nothing's said.
     nonisolated static func transcribe(_ url: URL) async -> Transcript? {
+        // Whisper first when it's installed (any macOS, and strong at Chinese); Apple's if it fails.
+        if let whisper = Whisper.inUse, let t = await Whisper.transcribe(url, with: whisper) { return t }
+        if Whisper.engineChoice == "whisper" { return nil }
         #if canImport(Speech)
         if #available(macOS 26, *) {
             return try? await SpeechReader.read(url)
@@ -248,7 +262,14 @@ private enum SpeechReader {
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
             return Transcript(words: [], language: "")
         }
-        let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale.current) ?? Locale(identifier: "en-US")
+        // The language chosen in Settings › Subtitles, else the Mac's own.
+        let wanted: Locale = switch Whisper.language {
+        case "auto": Locale.current
+        case "zh": Locale(identifier: "zh-CN")
+        case "en": Locale(identifier: "en-US")
+        default: Locale(identifier: Whisper.language)
+        }
+        let locale = await SpeechTranscriber.supportedLocale(equivalentTo: wanted) ?? Locale(identifier: "en-US")
         let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [],
                                             attributeOptions: [.audioTimeRange])
         // The language's model, once per Mac.

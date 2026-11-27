@@ -107,7 +107,7 @@ enum MCPTools {
             tool("history", "Undo or redo", "Undoes or redoes the last change (each tool call is one change).", ["action": ["type": "string", "enum": ["undo", "redo"]]], required: ["action"]),
             tool("auto_edit", "Auto edit", "Builds a whole cut from the library on its own: best moments, cut to the beat of a song if there is one, titled. Replaces what's on the timeline (one undo brings it back)."),
             tool("save_project", "Save project", "Saves the project to its file. A project that's never been saved has to be saved by the person."),
-        ] + moreDefinitions
+        ] + moreDefinitions + classDefinitions
     }
 
     // MARK: Calls
@@ -150,7 +150,8 @@ enum MCPTools {
             return json(BuiltInLook.all.map(\.name))
 
         case "import_media":
-            try notInMagic()
+            // In a Magic run only when Settings lets Claude use files on this Mac (and then the run has no web).
+            if !MagicAgent.filesAllowed { try notInMagic() }
             let paths = args["paths"] as? [String] ?? []
             let urls = paths.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
             let missing = urls.filter { !FileManager.default.fileExists(atPath: $0.path) }
@@ -158,6 +159,7 @@ enum MCPTools {
             let assets: [MediaAsset] = await withCheckedContinuation { cont in
                 model.importFiles(urls, offerMatch: false) { cont.resume(returning: $0) }
             }
+            for a in assets { draft?.addAsset(a) }
             return json(["imported": assets.map(assetJSON), "failed": urls.count - assets.count])
 
         case "download_media":
@@ -210,7 +212,7 @@ enum MCPTools {
                 return json(["asset_id": asset.id.uuidString, "status": "no_sound", "note": "\(asset.name) has no sound."])
             }
             guard Transcripts.available else {
-                return json(["asset_id": asset.id.uuidString, "status": "unavailable", "note": "Hearing speech needs macOS 26 on this Mac."])
+                return json(["asset_id": asset.id.uuidString, "status": "unavailable", "note": "Hearing speech needs Whisper installed on this Mac (Settings › Subtitles), or macOS 26."])
             }
             guard let t = await Transcripts.shared.ready(url) else {
                 return json(["asset_id": asset.id.uuidString, "status": "failed", "note": "Couldn't hear what's said in \(asset.name)."])
@@ -349,7 +351,7 @@ enum MCPTools {
                 }], model, who, draft)
                 return json(["captions": captionsJSON(draft?.project ?? model.project, model)])
             }
-            guard Transcripts.available else { throw MCPToolError("Captions need speech recognition, which needs macOS 26 on this Mac.") }
+            guard Transcripts.available else { throw MCPToolError("Captions need speech recognition: install Whisper (Settings › Subtitles) or use macOS 26.") }
             let targets = p.unlocked(given.isEmpty ? (p.captions == nil ? p.defaultCaptionTargets : []) : p.captionTargets(given))
             if !given.isEmpty, targets.isEmpty { throw MCPToolError("Those clips have no sound to caption.") }
             if p.captions == nil, targets.isEmpty { throw MCPToolError("There's no one talking to caption: give clip_ids of clips with speech.") }
@@ -578,6 +580,7 @@ enum MCPTools {
             return text("Saved.")
 
         default:
+            if let out = try await callClass(name, args, model: model, who: who, draft: draft) { return out }
             if let out = try await callMore(name, args, model: model, who: who, draft: draft) { return out }
             throw MCPToolError("No tool called \(name).")
         }
@@ -587,7 +590,7 @@ enum MCPTools {
 
     /// Plays edits with the agent's cursor and waits until they're done; during a Magic edit, just
     /// makes them in the draft.
-    private static func perform(_ edits: [MagicEdit], _ model: EditorModel, _ who: String, _ draft: MCPDraft?) async throws {
+    static func perform(_ edits: [MagicEdit], _ model: EditorModel, _ who: String, _ draft: MCPDraft?) async throws {
         if let draft { return draft.apply(edits) }
         reveal(edits, model)
         let color = Self.color(for: who)

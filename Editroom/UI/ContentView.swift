@@ -108,6 +108,9 @@ struct ContentView: View {
         .sheet(isPresented: $model.showExport) {
             ExportSheet(model: model)
         }
+        .sheet(isPresented: $model.showDub) {
+            DubPipelineView(model: model)
+        }
         // "Manage AI Agents" (and `--show-agents`): Settings, on its Magic tab.
         .onChange(of: model.showAgents) { _, show in
             guard show else { return }

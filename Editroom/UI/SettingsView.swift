@@ -6,12 +6,13 @@ struct SettingsView: View {
     @ObservedObject var model: EditorModel
 
     enum Tab: String, CaseIterable, Identifiable {
-        case general = "General", shortcuts = "Shortcuts", magic = "Magic", updates = "Updates"
+        case general = "General", shortcuts = "Shortcuts", subtitles = "Subtitles", magic = "Magic", updates = "Updates"
         var id: Self { self }
         var symbol: String {
             switch self {
             case .general: "gearshape"
             case .shortcuts: "keyboard"
+            case .subtitles: "captions.bubble"
             case .magic: "wand.and.sparkles"
             case .updates: "arrow.down.circle"
             }
@@ -48,6 +49,7 @@ struct SettingsView: View {
                 switch tab {
                 case .general: GeneralSettings()
                 case .shortcuts: ShortcutSettings()
+                case .subtitles: SubtitleSettings()
                 case .magic: MagicSettings(model: model)
                 case .updates: UpdateSettings()
                 }
@@ -530,6 +532,7 @@ private struct MagicSettings: View {
     @ObservedObject var connect = AgentConnect.shared
     @AppStorage("magicEnabled") private var magicEnabled = true
     @AppStorage("magicShowWork") private var showWork = true
+    @AppStorage("magicFiles") private var magicFiles = true
 
     /// Claude Code only when it's on this Mac.
     private var apps: [AgentApp] {
@@ -549,6 +552,14 @@ private struct MagicSettings: View {
                         ToggleRow(title: "Show Magic at work",
                                   note: "Watch the cursors make the edit. Off, the edit appears at once, as one step you can undo.",
                                   isOn: $showWork, boxed: false)
+                            .disabled(!magicEnabled)
+                            .opacity(magicEnabled ? 1 : 0.4)
+                        Divider().overlay(Theme.stroke)
+                        ToggleRow(title: "Claude can use files on this Mac",
+                                  note: magicFiles
+                                    ? "On: Claude can find and bring in footage, subtitles and dubs from your home folder. It gets no web access in the same run, so nothing it reads online can send your files anywhere."
+                                    : "Off: Claude can't see your files, but can search the web for music.",
+                                  isOn: $magicFiles, boxed: false)
                             .disabled(!magicEnabled)
                             .opacity(magicEnabled ? 1 : 0.4)
                     }
@@ -770,17 +781,90 @@ private struct AppRow: View {
     }
 }
 
+// MARK: Subtitles
+
+/// How speech is heard for captions and transcripts: Whisper (installed on this Mac) or Apple's, and in
+/// which language.
+private struct SubtitleSettings: View {
+    @AppStorage("transcriber") private var engine = "auto"
+    @AppStorage("transcriptLanguage") private var language = "auto"
+    @AppStorage("whisperProgram") private var program = ""
+    @AppStorage("whisperModel") private var modelName = ""
+    @State private var found: Whisper.Install?
+
+    private var appleAvailable: Bool {
+        if #available(macOS 26, *) { return true }
+        return false
+    }
+
+    private var status: String {
+        if let f = found {
+            var s = "Using \(f.kind.label): \(f.program.path)"
+            if let m = f.model { s += "\nModel: \(m.lastPathComponent)" }
+            return s
+        }
+        var s = "No Whisper found on this Mac."
+        s += appleAvailable ? " Apple's speech recognition is used instead." : " Captions need Whisper on this version of macOS."
+        s += "\nTo install the fastest one for Apple silicon, in Terminal: pip3 install mlx-whisper (or: brew install whisper-cpp, then download a ggml model into ~/Library/Application Support/Editroom/Whisper)."
+        return s
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                SettingsSection("Hearing speech") {
+                    SettingsRow("Use", detail: "For captions, transcripts and finding where nobody talks.") {
+                        SegmentedChoice(options: [("auto", "Automatic"), ("whisper", "Whisper"), ("apple", "Apple")], selection: $engine)
+                    }
+                    Divider().overlay(Theme.stroke)
+                    SettingsRow("Language", detail: "Auto lets Whisper tell. 中文 writes Simplified Chinese.") {
+                        SegmentedChoice(options: [("auto", "Auto"), ("zh", "中文"), ("en", "English")], selection: $language)
+                    }
+                    Divider().overlay(Theme.stroke)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(status)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Theme.textDim)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                        Text("Files already heard keep their transcript. To hear one again (after changing these), pick its clip and choose Clip › Transcribe Again.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textFaint)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(14)
+                }
+                SettingsSection("Whisper (optional)") {
+                    SettingsRow("Program", detail: "Leave empty to find it. Or the full path to mlx_whisper, whisper-cli or whisper.") {
+                        TextField("Automatic", text: $program)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 220)
+                    }
+                    Divider().overlay(Theme.stroke)
+                    SettingsRow("Model", detail: "A model name (turbo, large-v3) or a whisper.cpp .bin file. Empty: the best one.") {
+                        TextField("Automatic", text: $modelName)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 220)
+                    }
+                }
+            }
+            .padding(.horizontal, 22)
+            .padding(.top, 14)
+            .padding(.bottom, 22)
+        }
+        .onAppear { found = Whisper.find() }
+        .onChange(of: program) { _, _ in found = Whisper.find() }
+        .onChange(of: modelName) { _, _ in found = Whisper.find() }
+    }
+}
+
 // MARK: Updates
 
-/// Which version this is, and checking for new ones (Updates).
+/// Which version this is. This build never checks for or installs updates by itself: a new version only
+/// arrives when someone rebuilds it from the repository, so what runs on this Mac is always what was chosen.
 private struct UpdateSettings: View {
     private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development" }
     private var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—" }
-    @ObservedObject private var updates = Updates.shared
-    private var checked: String {
-        guard let d = updates.lastCheck else { return "Never" }
-        return d.formatted(date: .abbreviated, time: .shortened)
-    }
 
     var body: some View {
         ScrollView {
@@ -788,32 +872,11 @@ private struct UpdateSettings: View {
                 Card(title: "Software Update") {
                     VStack(alignment: .leading, spacing: 12) {
                         Row(name: "Installed version", value: "\(version) (\(build))")
-                        Row(name: "Last checked", value: checked)
                         Divider().overlay(Theme.stroke)
-                        Toggle("Check for updates automatically", isOn: Binding(get: { updates.automatic }, set: { updates.automatic = $0 }))
-                            .toggleStyle(.checkbox)
-                            // The grey it's always had: the accent is lighter on Light, for alerts' main buttons.
-                            .tint(Color(red: 0.557, green: 0.557, blue: 0.541))
-                            .font(.system(size: 12))
-                            .disabled(!updates.running)
-                        PillButton(title: "Check for Updates…", prominent: false) { updates.check() }
-                            .disabled(!updates.canCheck)
-                        if !updates.running {
-                            Text("This build doesn't check for updates.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Theme.textFaint)
-                        }
-                    }
-                }
-                Card(title: "Release Notes") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Each update lists what's new before you install it. Every version's notes are on GitHub.")
+                        Text("Automatic updates are off in this build. Editroom never downloads or installs a new version by itself. To update, rebuild it from your copy of the code in Xcode.")
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.textDim)
                             .fixedSize(horizontal: false, vertical: true)
-                        PillButton(title: "View GitHub Releases", prominent: false) {
-                            NSWorkspace.shared.open(URL(string: "https://github.com/robbietilton/Editroom/releases")!)
-                        }
                     }
                 }
             }

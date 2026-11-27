@@ -146,6 +146,8 @@ final class EditorModel: ObservableObject {
     @Published private(set) var fileURL: URL?
     @Published private(set) var isDirty = false
     @Published var showExport = false
+    /// Subtitles › Translate and Dub…
+    @Published var showDub = false
     @Published var showAgents = false
     /// Playback starts over from the beginning when it reaches the end.
     @Published var loop = UserDefaults.standard.bool(forKey: "loopPlayback") {
@@ -1983,6 +1985,8 @@ final class EditorModel: ObservableObject {
         var h = Hasher()
         h.combine(project.captionedClips)
         h.combine(project.captionFixes)
+        h.combine(project.captions?.layer)
+        h.combine(project.subtitleRevision)
         h.combine(transcriptVersion)
         let key = h.finalize()
         if let c = captionCache, c.key == key { return c.blocks }

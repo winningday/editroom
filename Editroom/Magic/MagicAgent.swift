@@ -187,6 +187,17 @@ final class MagicAgent: ObservableObject {
 
     // MARK: The brief
 
+    /// Tools made for long, multi-camera painting classes.
+    static let classNotes = """
+    For long classes and tutorials: make_multicam syncs several cameras of the same session by their sound, then \
+    switch_angle cuts to another camera from a time on, and set_pip shows another camera small in a corner. \
+    remove_dead_air cuts (or speeds up) stretches where nothing moves and nothing is said; speed_up_range makes a \
+    stretch into a timelapse, optionally only where nobody talks. Subtitles: export_subtitles writes the captions \
+    as an SRT or plain text, import_subtitles brings an SRT in as a subtitle layer (a translation, say), and \
+    set_subtitle_layer picks which layer the caption track shows. import_dub lays a narration track in from 0 \
+    with the original voice turned down under it.
+    """
+
     static func brief(request: String, project p: Project, pointers: MagicPointers? = nil) -> String {
         let ask = request.trimmingCharacters(in: .whitespacesAndNewlines)
         let onTimeline = p.clips.filter { $0.kind != .audio }
@@ -273,6 +284,14 @@ final class MagicAgent: ObservableObject {
         When you're done, write one or two short sentences for the person: what you made or changed, and anything \
         you couldn't do and why. Plain words, no lists, no ids.
         """)
+        lines.append(classNotes)
+        if filesAllowed {
+            lines.append("""
+            In this run you can read files on this Mac (Read, Glob, Grep) and bring footage, music, subtitles or dub \
+            tracks in with import_media and import_subtitles. You have no web access, so don't use download_media or \
+            look for music online. Never change or delete the person's files.
+            """)
+        }
         return lines.joined(separator: "\n\n")
     }
 
@@ -476,6 +495,10 @@ final class MagicAgent: ObservableObject {
         return String(data: data, encoding: .utf8) ?? ""
     }
 
+    /// Settings › Magic › "Claude can use files on this Mac": Claude Code may read and bring in files from the
+    /// home folder (footage, SRTs, dubs), with no web tools in the same run. Off: web tools, no files.
+    nonisolated static var filesAllowed: Bool { UserDefaults.standard.object(forKey: "magicFiles") as? Bool ?? true }
+
     private static var environment: [String: String] {
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "")
@@ -497,19 +520,34 @@ final class MagicAgent: ObservableObject {
             p.arguments = [
                 "-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence",
                 "--mcp-config", config, "--strict-mcp-config",
+            ]
+            if Self.filesAllowed {
+                // Files on this Mac (to find footage, subtitles and dubs, and bring them in), and no web at all:
+                // a run never has both the person's files and pages from the internet, so nothing it reads
+                // online can make it send their files anywhere.
+                p.arguments! += [
+                    "--tools", "Read,Glob,Grep",
+                    "--allowedTools", "mcp__editroom", "Read", "Glob", "Grep",
+                    "--disallowedTools", "mcp__editroom__auto_edit", "mcp__editroom__save_project", "mcp__editroom__export",
+                    "mcp__editroom__download_media",
+                    "--add-dir", FileManager.default.homeDirectoryForCurrentUser.path,
+                ]
+            } else {
                 // Editroom's tools, and web search and reading pages (to find music). None of Claude
                 // Code's others: no files, no shell.
-                "--tools", "WebSearch,WebFetch",
-                "--allowedTools", "mcp__editroom", "WebSearch", "WebFetch",
-                "--disallowedTools", "mcp__editroom__auto_edit", "mcp__editroom__import_media", "mcp__editroom__save_project",
-                "mcp__editroom__export",
-            ]
+                p.arguments! += [
+                    "--tools", "WebSearch,WebFetch",
+                    "--allowedTools", "mcp__editroom", "WebSearch", "WebFetch",
+                    "--disallowedTools", "mcp__editroom__auto_edit", "mcp__editroom__import_media", "mcp__editroom__save_project",
+                    "mcp__editroom__export",
+                ]
+            }
             if !model(for: kind).isEmpty { p.arguments! += ["--model", model(for: kind)] }
             if !effort(for: kind).isEmpty { p.arguments! += ["--effort", effort(for: kind)] }
         case .chatgpt:
             p.arguments = [
-                // Web search (to find music); the shell stays read-only and offline.
-                "--search",
+                // No web search: Codex's read-only shell can still read any file on this Mac, so it never also
+                // gets pages from the internet that could tell it to send those files somewhere. Offline, read-only.
                 "exec", "--json", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config",
                 "-s", "read-only", "-C", folder.path,
                 "-c", "mcp_servers.editroom.url=\"\(url)\"",

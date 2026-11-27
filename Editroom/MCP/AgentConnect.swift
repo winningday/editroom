@@ -196,7 +196,8 @@ final class AgentConnect: ObservableObject {
         # Starts Editroom's connection for AI apps (Claude, ChatGPT's Codex).
         app=\(shellQuote(binary))
         if [ ! -x "$app" ]; then
-          found=$(/usr/bin/mdfind 'kMDItemCFBundleIdentifier == "\(editroomBundleID)"' | /usr/bin/head -n 1)
+          # Only a copy installed in an Applications folder, never one sitting in Downloads or a disk image.
+          found=$(/usr/bin/mdfind 'kMDItemCFBundleIdentifier == "\(editroomBundleID)"' | /usr/bin/grep -E "^(/Applications|$HOME/Applications)/" | /usr/bin/head -n 1)
           [ -n "$found" ] && app="$found/Contents/MacOS/Editroom"
         fi
         [ -x "$app" ] || app="/Applications/Editroom.app/Contents/MacOS/Editroom"

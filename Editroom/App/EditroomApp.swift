@@ -80,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { Updates.shared.start() }
+        // No automatic updates in this build: new versions come only from rebuilding this repository.
         NotificationCenter.default.addObserver(forName: NSMenu.didAddItemNotification, object: nil, queue: .main) { note in
             // Tidied once SwiftUI has finished updating the menus, never in the middle of it.
             MainActor.assumeIsolated { MenuCleanup.scheduleTidy() }
@@ -238,7 +238,6 @@ struct EditroomApp: App {
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About Editroom") { AboutPanel.show() }
-                Button("Check for Updates…") { Updates.shared.check() }
             }
             CommandGroup(replacing: .newItem) {
                 Button("New") { model.newProject() }.keyboardShortcut(keys.menu(.new))
@@ -302,9 +301,69 @@ struct EditroomApp: App {
                 Button("Add Solid") { model.addAtPlayhead(.solid) }
                 Button(model.captionsMenuTitle) { model.captionsFromMenu() }
                     .disabled(!model.canCaption)
+                Button("Transcribe Again") { model.transcribeAgain() }
+                    .disabled(!Transcripts.available)
                 Divider()
                 Button("Add Video Track") { model.addTrack(.video) }
                 Button("Add Audio Track") { model.addTrack(.audio) }
+            }
+            CommandMenu("Subtitles") {
+                Button("Translate and Dub…") { model.showDub = true }
+                Divider()
+                Button("Import Subtitles (SRT)…") { model.importSubtitlesFromPanel() }
+                Divider()
+                Button("Export Subtitles (SRT)…") { model.exportSubtitles(.srt) }
+                    .disabled(model.project.captions == nil)
+                Button("Export Transcript (Text)…") { model.exportSubtitles(.text) }
+                    .disabled(model.project.captions == nil)
+                Button("Export Transcript with Times…") { model.exportSubtitles(.textWithTimes) }
+                    .disabled(model.project.captions == nil)
+                Divider()
+                // Which subtitles the caption track shows: what's heard, or a layer brought in (a translation).
+                Picker("Show", selection: Binding(get: { model.project.captions?.layer }, set: { model.showSubtitleLayer($0) })) {
+                    Text("What's Heard").tag(UUID?.none)
+                    ForEach(model.project.subtitleLayers ?? []) { layer in
+                        Text(layer.name).tag(UUID?.some(layer.id))
+                    }
+                }
+                .disabled(model.project.captions == nil)
+                if let layers = model.project.subtitleLayers, !layers.isEmpty {
+                    Menu("Remove Layer") {
+                        ForEach(layers) { layer in
+                            Button(layer.name) { model.removeSubtitleLayer(layer.id) }
+                        }
+                    }
+                }
+                Divider()
+                Button("Import Dub Track…") { model.importDubFromPanel() }
+            }
+            CommandMenu("Class") {
+                Button("Make Multi-Angle from Selected Clips") { model.makeMultiAngle() }
+                if let group = model.activeAngleGroup {
+                    Divider()
+                    ForEach(Array(group.angles.enumerated()), id: \.offset) { i, angle in
+                        // ⌥1…⌥9 for the first nine cameras.
+                        Button("Cut to Camera \(i + 1): \(angle.name)") { model.switchAngle(to: i) }
+                            .keyboardShortcut(i < 9 ? KeyboardShortcut(KeyEquivalent(Character(String(i + 1))), modifiers: .option) : nil)
+                    }
+                    Menu("Selected Clips Show") {
+                        ForEach(Array(group.angles.enumerated()), id: \.offset) { i, angle in
+                            Button("Camera \(i + 1): \(angle.name)") { model.showAngle(i) }
+                        }
+                    }
+                    Menu("Picture in Picture") {
+                        ForEach(Array(group.angles.enumerated()), id: \.offset) { i, angle in
+                            Menu("Camera \(i + 1): \(angle.name)") {
+                                ForEach(PictureCorner.allCases, id: \.self) { corner in
+                                    Button(corner.label) { model.addPictureInPicture(angle: i, corner: corner) }
+                                }
+                            }
+                        }
+                    }
+                }
+                Divider()
+                Button("Remove Dead Air…") { model.removeDeadAirDialog() }
+                Button("Speed Up…") { model.speedUpDialog() }
             }
             // Plain-key shortcuts (M, I, O, ⇧X) are run by the editor window first (KeyCommands), and
             // typed as text in a text field.

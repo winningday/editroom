@@ -10,6 +10,19 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
 curl -fsSLO "https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.xz"
+# The source must be the one FFmpeg published: checked against its signature (FFmpeg's release key) when
+# gpg is installed, or against a SHA-256 you got from ffmpeg.org yourself (FFMPEG_SHA256=…). Never built unchecked.
+if [[ -n "${FFMPEG_SHA256:-}" ]]; then
+  echo "$FFMPEG_SHA256  ffmpeg-$VERSION.tar.xz" | shasum -a 256 -c -
+elif command -v gpg >/dev/null; then
+  curl -fsSLO "https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.xz.asc"
+  # FFmpeg release signing key (ffmpeg-devel@ffmpeg.org), as listed on https://ffmpeg.org/download.html.
+  gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys FCF986EA15E6E293A5644F10B4322F04D67658D8
+  gpg --batch --verify "ffmpeg-$VERSION.tar.xz.asc" "ffmpeg-$VERSION.tar.xz"
+else
+  echo "Can't check the download: install gpg (brew install gnupg) or set FFMPEG_SHA256." >&2
+  exit 1
+fi
 tar xf "ffmpeg-$VERSION.tar.xz"
 mkdir build && cd build
 # A fixed, ordinary install location: configure writes it into the program, so a build folder's path
