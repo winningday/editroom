@@ -8,11 +8,13 @@ Editroom has the pro editing tools you need — color grading, speed ramps, tran
 
 Because it's open source, you can download the Xcode project and add, remove, or modify any feature to fit your workflow.
 
+> **This is a fork** adapted for long, multi-camera painting classes: SRT subtitles in and out (for translation and dubbing), Whisper transcription, a subtitle editor, multi-camera switching, dead-air removal and timelapse speed-ups. It **never updates itself**. See [FORK.md](FORK.md) for what changed and how to use it.
+
 ![Editroom](docs/screenshot.webp)
 
 ## Installation
 
-Download the latest release from [GitHub Releases](https://github.com/robbietilton/Editroom/releases/latest), open the DMG and drag Editroom to Applications. Editroom checks for updates itself (Editroom › Check for Updates…).
+Build it from this repository in Xcode (see Building). This fork has no automatic updates: a new version only arrives when you rebuild it.
 
 ## Features
 
@@ -64,6 +66,7 @@ Mention a clip with `@` or point at the playhead with `@playhead`. Every Magic e
 - Magic's Local option needs Apple Intelligence (macOS 26 or later)
 - Magic's Claude and ChatGPT options need the Claude app, or ChatGPT / Codex, signed in to your plan
 - Xcode 26 or later (to build from source)
+- Captions and transcripts need [Whisper](FORK.md#whisper) installed on the Mac, or macOS 26
 
 ## Building
 
@@ -71,17 +74,16 @@ Open `Editroom.xcodeproj` and run the **Editroom** scheme.
 
 ## Releasing
 
-`scripts/release.sh` builds a Release version, signs it with Developer ID, notarizes and staples it, and packages it into `dist/Editroom-<version>.dmg`. `scripts/publish.sh` then creates the GitHub Release and updates the Sparkle feed (`appcast.xml`).
+`scripts/release.sh` builds a Release version, signs it with Developer ID, notarizes and staples it, and packages it into `dist/Editroom-<version>.dmg`. Set `EDITROOM_TEAM` to your Apple Developer Team ID first. There is no update feed: copy the DMG to the Mac yourself.
 
 They need, all kept outside this repository:
 
 - a **Developer ID Application** certificate in the login keychain
 - notarization credentials saved with `xcrun notarytool store-credentials "editroom-notary" …`
-- the Sparkle signing key in the login keychain (`generate_keys --account editroom`)
-- [`create-dmg`](https://github.com/create-dmg/create-dmg) (`brew install create-dmg`) and [`gh`](https://cli.github.com)
+- [`create-dmg`](https://github.com/create-dmg/create-dmg) (`brew install create-dmg`)
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
 
-Editroom includes [FFmpeg](https://ffmpeg.org) 9.1, licensed under the GNU LGPL 2.1 or later, which it runs as a separate program to open formats macOS can't. See [Vendor/ffmpeg](Vendor/ffmpeg/README.md) for its source and build options. Updates are handled by [Sparkle](https://sparkle-project.org) (MIT).
+Editroom includes [FFmpeg](https://ffmpeg.org) 9.1, licensed under the GNU LGPL 2.1 or later, which it runs as a separate program to open formats macOS can't. See [Vendor/ffmpeg](Vendor/ffmpeg/README.md) for its source and build options.
