@@ -74,21 +74,42 @@ Under the hood it's an ordinary edit: one camera's clip at a time on V1, with th
   talking" keeps explanations at normal speed. Sound in the sped-up parts is turned off by default.
 - One undo puts each one back.
 
-### Claude Code can do all of it
+### Claude Code can do the editing
 New MCP tools: `export_subtitles`, `import_subtitles`, `list_subtitle_layers`, `set_subtitle_layer`,
 `import_dub`, `transcribe_again`, `make_multicam`, `list_angles`, `switch_angle`, `set_pip`,
 `remove_dead_air` (with `dry_run`), `speed_up_range`. So a prompt like *"sync the three cameras, use the
 overhead camera while she paints and the face camera when she talks to us, cut dead air, timelapse the last
 20 minutes where she's quiet, then export the Chinese subtitles to ~/Desktop/class.srt"* is one Magic run.
 
-## The translation and dubbing round trip
+## Translate and Dub (plugged into the OpenClaw translator)
 
-1. Edit the class. Add captions (Clip › Add Captions); Whisper hears the Chinese.
-2. Fix any lines in the subtitle list, then **Export Subtitles (SRT)** with "What's Heard" shown.
-3. Oscar translates it (`translator/input/` → `translator/output/`), and the dubbing pipeline makes the WAV.
-4. **Import Subtitles** with the English SRT (timed to this timeline) and **Import Dub Track** with the WAV.
-5. Export the video. Edit the timeline *after* step 2 and the subtitles still follow, but the dub won't:
-   re-export, translate and dub again for a final cut.
+**Subtitles › Translate and Dub…** runs a lesson through `OpenClaw-Artist-Management/translator` (its
+`PIPELINE.md`) straight from the edit, with the same tools and rules the translator already uses. Nothing is
+reimplemented in Editroom: Claude Code follows the translator's `CLAUDE.md` and `DUBBING.md`, `srt_dubber`
+makes the voice, and `retime_to_words.py` times the subtitles to it.
+
+| Step | Who | What happens |
+|------|-----|--------------|
+| 1. Send | Editroom | The Chinese captions on the timeline (Whisper's, or Maya's own Chinese layer) go to `input/<title>中字.srt`, timed to this edit, so the dub always matches the cut. |
+| 2. Cleanup | Claude Code | Job 0 per CLAUDE.md → `input/…_clean.srt`. It comes back as the 中文 (清理) layer, with Claude's Chinese report. |
+| 3. Gate A | **Maya** | She reads and fixes the cleaned Chinese in the subtitle list. Her edits are written back to `_clean.srt`, and her wording wins. |
+| 4. Translate | Claude Code | Job 1 per CLAUDE.md → `output/<stem>_en.srt` + `_en_raw.srt`. Delivered per the delivery rule. It comes back as the English layer. |
+| 5. Gate B | **Maya** | She reads the English. Changed lines go back to Claude, which fixes the translation JSON and regenerates (never hand-edits the SRT). |
+| 6. Audition | srt_dubber | The first 12 lines (`--limit 12`, sharing the full dub's cache) go onto the timeline as a dub track, with the camera sound ducked. |
+| 7. Gate C | **Maya** | She plays the start and listens. |
+| 8. Dub | srt_dubber | The whole lesson (`--mp3`). A fragment-check stop or a `shorten.json` hand-back goes to Claude to fix, then it re-runs from cache. |
+| 9. Re-time | dub_words.py + retime_to_words.py | English and Chinese are timed to the voice word by word (dub rule 4). Both come back as layers, and the dub replaces the audition. Falls back to Whisper on the Mac if faster-whisper isn't installed. |
+| 10. Deliver | Claude Code | `交付/<stem>/` plus a zip, force-added and merged to `main`, per the translator's rules (optional). |
+
+The lesson's progress is saved in the project, so it can be closed and picked up later. If the edit changes
+after step 1, the panel says so before dubbing (the voice would drift) and offers to start again.
+
+**Needs on the Mac:** a clone of `OpenClaw-Artist-Management` (found in the home folder, Documents, Developer,
+Projects, code or GitHub, or chosen in the panel), with git access so Claude can deliver to `main`; Claude Code
+signed in; Python 3.10+ (`brew install python`); and the ElevenLabs key in the translator's `.env`, as today.
+Optional: `pip3 install faster-whisper` and `brew install ffmpeg` for the documented word-timing step.
+
+Manual import and export (Subtitles menu) still work for one-off files.
 
 ## First build checklist (on the Mac)
 
