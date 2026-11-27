@@ -10,7 +10,11 @@ struct SubtitleList: View {
 
     private var current: String? {
         let t = Double(clock.frame) / max(1, model.project.fps)
-        return blocks.last { $0.start <= t + 1e-6 && t < $0.end }?.id
+        // The last subtitle starting by now (they're in order), if it's still showing.
+        var lo = 0, hi = blocks.count
+        while lo < hi { let m = (lo + hi) / 2; if blocks[m].start <= t + 1e-6 { lo = m + 1 } else { hi = m } }
+        guard lo > 0, t < blocks[lo - 1].end else { return nil }
+        return blocks[lo - 1].id
     }
 
     var body: some View {

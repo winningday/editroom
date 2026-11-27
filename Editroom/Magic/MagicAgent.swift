@@ -287,7 +287,9 @@ final class MagicAgent: ObservableObject {
         lines.append(classNotes)
         if filesAllowed {
             lines.append("""
-            In this run you can read files on this Mac (Read, Glob, Grep) and bring footage, music, subtitles or dub             tracks in with import_media and import_subtitles. You have no web access, so don't use download_media or             look for music online. Never change or delete the person's files.
+            In this run you can read files on this Mac (Read, Glob, Grep) and bring footage, music, subtitles or dub \
+            tracks in with import_media and import_subtitles. You have no web access, so don't use download_media or \
+            look for music online. Never change or delete the person's files.
             """)
         }
         return lines.joined(separator: "\n\n")

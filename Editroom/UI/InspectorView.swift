@@ -106,7 +106,7 @@ struct InspectorView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            InspectorSection("Subtitles (\(blocks.count))") {
+            InspectorSection("Subtitles") {
                 if let layers = model.project.subtitleLayers, !layers.isEmpty {
                     MenuField(label: "Showing: " + (model.project.activeSubtitleLayer?.name ?? "What's heard")) {
                         Button("What's heard") { model.showSubtitleLayer(nil) }

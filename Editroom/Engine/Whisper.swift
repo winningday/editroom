@@ -54,8 +54,24 @@ enum Whisper {
         return .python
     }
 
-    /// The Whisper to use, if one is installed.
+    private static let cacheLock = NSLock()
+    nonisolated(unsafe) private static var cachedFind: (key: String, at: Date, value: Install?)?
+
+    /// The Whisper to use, if one is installed. Looked for at most every half minute (or when the settings
+    /// change), so menus and redraws never scan folders.
     static func find() -> Install? {
+        let key = "\(customProgram ?? "")|\(customModel ?? "")"
+        cacheLock.lock()
+        if let c = cachedFind, c.key == key, Date().timeIntervalSince(c.at) < 30 { cacheLock.unlock(); return c.value }
+        cacheLock.unlock()
+        let value = search()
+        cacheLock.lock()
+        cachedFind = (key, Date(), value)
+        cacheLock.unlock()
+        return value
+    }
+
+    private static func search() -> Install? {
         let fm = FileManager.default
         if let p = customProgram {
             let url = URL(fileURLWithPath: (p as NSString).expandingTildeInPath)
@@ -86,7 +102,7 @@ enum Whisper {
         }
         let dirs = ["\(home)/Library/Application Support/Editroom/Whisper", "\(home)/whisper.cpp/models", "\(home)/.cache/whisper",
                     "\(home)/.cache/whisper.cpp", "/opt/homebrew/share/whisper-cpp", "/opt/homebrew/share/whisper.cpp/models",
-                    "/usr/local/share/whisper-cpp", "\(home)/models", "\(home)/Downloads"]
+                    "/usr/local/share/whisper-cpp", "\(home)/models"]
         var found: [URL] = []
         for d in dirs {
             for f in (try? fm.contentsOfDirectory(atPath: d)) ?? [] where f.hasPrefix("ggml-") && f.hasSuffix(".bin") {
@@ -117,7 +133,9 @@ enum Whisper {
         try? fm.createDirectory(at: work, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: work) }
         let wav = work.appendingPathComponent("audio.wav")
-        guard await writeWAV(from: url, to: wav) else { return Transcript(words: [], language: "") }
+        // No sound at all: nothing said. Sound that couldn't be read: let Apple's recogniser try instead.
+        guard (try? await AVURLAsset(url: url).loadTracks(withMediaType: .audio).first) != nil else { return Transcript(words: [], language: "") }
+        guard await writeWAV(from: url, to: wav) else { return nil }
 
         let lang = language
         let zh = lang == "zh" || lang.hasPrefix("zh")

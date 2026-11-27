@@ -340,8 +340,9 @@ struct EditroomApp: App {
                 if let group = model.activeAngleGroup {
                     Divider()
                     ForEach(Array(group.angles.enumerated()), id: \.offset) { i, angle in
+                        // ⌥1…⌥9 for the first nine cameras.
                         Button("Cut to Camera \(i + 1): \(angle.name)") { model.switchAngle(to: i) }
-                            .keyboardShortcut(i < 9 ? KeyEquivalent(Character(String(i + 1))) : KeyEquivalent("0"), modifiers: .option)
+                            .keyboardShortcut(i < 9 ? KeyboardShortcut(KeyEquivalent(Character(String(i + 1))), modifiers: .option) : nil)
                     }
                     Menu("Selected Clips Show") {
                         ForEach(Array(group.angles.enumerated()), id: \.offset) { i, angle in
