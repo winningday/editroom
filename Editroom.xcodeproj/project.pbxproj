@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		CA0000000000000000000102 /* ffmpeg in Copy ffmpeg */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000101 /* ffmpeg */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
-		CA0000000000000000000203 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CA0000000000000000000202 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -43,7 +42,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				CA0000000000000000000203 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -88,7 +86,6 @@
 			);
 			name = Editroom;
 			packageProductDependencies = (
-				CA0000000000000000000202 /* Sparkle */,
 			);
 			productName = Editroom;
 			productReference = CA0000000000000000000001 /* Editroom.app */;
@@ -118,9 +115,6 @@
 			);
 			mainGroup = CA0000000000000000000004;
 			minimizedProjectReferenceProxies = 1;
-			packageReferences = (
-				CA0000000000000000000201 /* XCRemoteSwiftPackageReference "Sparkle" */,
-			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CA0000000000000000000005 /* Products */;
 			projectDirPath = "";
@@ -211,12 +205,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Manual;
-				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "-";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 9;
-				DEVELOPMENT_TEAM = 3E4X3B9Z9T;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -230,7 +224,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0.8;
-				PRODUCT_BUNDLE_IDENTIFIER = com.wonderassembly.Editroom;
+				PRODUCT_BUNDLE_IDENTIFIER = art.mayahan.Editroom;
 				PRODUCT_MODULE_NAME = Editroom;
 				PRODUCT_NAME = Editroom;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -243,12 +237,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Manual;
-				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "-";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 9;
-				DEVELOPMENT_TEAM = 3E4X3B9Z9T;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -262,7 +256,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0.8;
-				PRODUCT_BUNDLE_IDENTIFIER = com.wonderassembly.Editroom;
+				PRODUCT_BUNDLE_IDENTIFIER = art.mayahan.Editroom;
 				PRODUCT_MODULE_NAME = Editroom;
 				PRODUCT_NAME = Editroom;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -293,24 +287,6 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		CA0000000000000000000201 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/sparkle-project/Sparkle";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.6.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		CA0000000000000000000202 /* Sparkle */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = CA0000000000000000000201 /* XCRemoteSwiftPackageReference "Sparkle" */;
-			productName = Sparkle;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = CA0000000000000000000009 /* Project object */;
 }

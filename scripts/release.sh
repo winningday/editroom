@@ -1,19 +1,20 @@
 #!/bin/zsh
 # Builds a signed, notarized Editroom DMG that opens without warnings on any Mac: dist/Editroom-<version>.dmg.
-# Then scripts/publish.sh puts it on GitHub and in the update feed.
+# This fork has no update feed: copy the DMG to the Mac by hand. Nothing updates itself.
 #
 # Needs, all kept out of this repository:
 #   - a "Developer ID Application" certificate in the login keychain
 #   - notarization credentials saved once with:
-#       xcrun notarytool store-credentials "editroom-notary" --apple-id "…" --team-id 3E4X3B9Z9T
+#       xcrun notarytool store-credentials "editroom-notary" --apple-id "…" --team-id "$EDITROOM_TEAM"
 #   - create-dmg (brew install create-dmg)
-# Raise MARKETING_VERSION and CURRENT_PROJECT_VERSION in the project before each release: Sparkle compares the build number.
+# Raise MARKETING_VERSION and CURRENT_PROJECT_VERSION in the project before each release.
+# Set EDITROOM_TEAM to your own Apple Developer Team ID first.
 # The DMG window background is scripts/dmg/background.png (600 × 380) and background@2x.png (1200 × 760).
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP=Editroom
-TEAM=3E4X3B9Z9T
+TEAM="${EDITROOM_TEAM:?Set EDITROOM_TEAM to your Apple Developer Team ID}"
 IDENTITY="Developer ID Application"
 NOTARY_PROFILE=editroom-notary
 # Built outside Dropbox: the extended attributes it adds to files make code signing fail.

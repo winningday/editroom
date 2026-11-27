@@ -772,15 +772,11 @@ private struct AppRow: View {
 
 // MARK: Updates
 
-/// Which version this is, and checking for new ones (Updates).
+/// Which version this is. This build never checks for or installs updates by itself: a new version only
+/// arrives when someone rebuilds it from the repository, so what runs on this Mac is always what was chosen.
 private struct UpdateSettings: View {
     private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development" }
     private var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—" }
-    @ObservedObject private var updates = Updates.shared
-    private var checked: String {
-        guard let d = updates.lastCheck else { return "Never" }
-        return d.formatted(date: .abbreviated, time: .shortened)
-    }
 
     var body: some View {
         ScrollView {
@@ -788,32 +784,11 @@ private struct UpdateSettings: View {
                 Card(title: "Software Update") {
                     VStack(alignment: .leading, spacing: 12) {
                         Row(name: "Installed version", value: "\(version) (\(build))")
-                        Row(name: "Last checked", value: checked)
                         Divider().overlay(Theme.stroke)
-                        Toggle("Check for updates automatically", isOn: Binding(get: { updates.automatic }, set: { updates.automatic = $0 }))
-                            .toggleStyle(.checkbox)
-                            // The grey it's always had: the accent is lighter on Light, for alerts' main buttons.
-                            .tint(Color(red: 0.557, green: 0.557, blue: 0.541))
-                            .font(.system(size: 12))
-                            .disabled(!updates.running)
-                        PillButton(title: "Check for Updates…", prominent: false) { updates.check() }
-                            .disabled(!updates.canCheck)
-                        if !updates.running {
-                            Text("This build doesn't check for updates.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Theme.textFaint)
-                        }
-                    }
-                }
-                Card(title: "Release Notes") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Each update lists what's new before you install it. Every version's notes are on GitHub.")
+                        Text("Automatic updates are off in this build. Editroom never downloads or installs a new version by itself. To update, rebuild it from your copy of the code in Xcode.")
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.textDim)
                             .fixedSize(horizontal: false, vertical: true)
-                        PillButton(title: "View GitHub Releases", prominent: false) {
-                            NSWorkspace.shared.open(URL(string: "https://github.com/robbietilton/Editroom/releases")!)
-                        }
                     }
                 }
             }

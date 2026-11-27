@@ -150,7 +150,8 @@ enum MCPTools {
             return json(BuiltInLook.all.map(\.name))
 
         case "import_media":
-            try notInMagic()
+            // In a Magic run only when Settings lets Claude use files on this Mac (and then the run has no web).
+            if !MagicAgent.filesAllowed { try notInMagic() }
             let paths = args["paths"] as? [String] ?? []
             let urls = paths.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
             let missing = urls.filter { !FileManager.default.fileExists(atPath: $0.path) }
@@ -158,6 +159,7 @@ enum MCPTools {
             let assets: [MediaAsset] = await withCheckedContinuation { cont in
                 model.importFiles(urls, offerMatch: false) { cont.resume(returning: $0) }
             }
+            for a in assets { draft?.addAsset(a) }
             return json(["imported": assets.map(assetJSON), "failed": urls.count - assets.count])
 
         case "download_media":

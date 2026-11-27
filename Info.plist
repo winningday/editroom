@@ -33,12 +33,6 @@
 			</array>
 		</dict>
 	</array>
-	<key>SUEnableAutomaticChecks</key>
-	<true/>
-	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/robbietilton/Editroom/main/appcast.xml</string>
-	<key>SUPublicEDKey</key>
-	<string>vbFPYYiK4V1vHIpbrWv3a1N7qQwOQVRpeqEuWGmh9QA=</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

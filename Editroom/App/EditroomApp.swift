@@ -80,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { Updates.shared.start() }
+        // No automatic updates in this build: new versions come only from rebuilding this repository.
         NotificationCenter.default.addObserver(forName: NSMenu.didAddItemNotification, object: nil, queue: .main) { note in
             // Tidied once SwiftUI has finished updating the menus, never in the middle of it.
             MainActor.assumeIsolated { MenuCleanup.scheduleTidy() }
@@ -238,7 +238,6 @@ struct EditroomApp: App {
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About Editroom") { AboutPanel.show() }
-                Button("Check for Updates…") { Updates.shared.check() }
             }
             CommandGroup(replacing: .newItem) {
                 Button("New") { model.newProject() }.keyboardShortcut(keys.menu(.new))
