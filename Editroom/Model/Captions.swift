@@ -6,6 +6,8 @@ import Foundation
 struct CaptionTrack: Codable, Hashable {
     var hidden = false
     var style = CaptionStyle()
+    /// The subtitle layer shown instead of what's heard (a translation); nil shows what's heard.
+    var layer: UUID?
 }
 
 /// How every caption looks. One style for the whole track.
@@ -60,6 +62,8 @@ struct CaptionBlock: Hashable, Identifiable {
         var source: Double
         /// The words in the file it stands for (more than one when a retyped caption has new words).
         var covers: [Double]
+        /// Starts a subtitle of its own (subtitles brought in from a file keep their lines as they were).
+        var cue = false
     }
 
     /// The clip it comes from and its first word's time in the file: steady through trims and moves.
@@ -70,7 +74,7 @@ struct CaptionBlock: Hashable, Identifiable {
     var end: Double
     var words: [Word]
 
-    var text: String { words.map(\.text).joined(separator: " ") }
+    var text: String { SubtitleText.join(words.map(\.text)) }
 
     /// The words in the file the caption stands for, in order.
     var covered: [Double] {
@@ -130,6 +134,8 @@ extension Project {
     /// word takes the whole text and the rest join it, so the caption keeps its time and the new words share
     /// it out. Empty text leaves them all out.
     mutating func setCaptionText(_ block: CaptionBlock, to text: String) {
+        // Showing a layer (a translation): its own words change, nothing heard is touched.
+        if let layer = activeSubtitleLayer { return setLayerCaptionText(block, to: text, layer: layer.id) }
         let new = text.split(whereSeparator: \.isWhitespace).map(String.init)
         let said = block.covered
         var fixes = captionFixes?[block.assetID] ?? []
@@ -161,9 +167,13 @@ enum CaptionLayout {
 
     static func blocks(_ project: Project, transcript: (MediaAsset) -> Transcript?) -> [CaptionBlock] {
         var out: [CaptionBlock] = []
+        // A subtitle layer (a translation) in place of what's heard: its own words, and no fixes to what's heard.
+        let layer = project.activeSubtitleLayer
         for clip in project.captionedClips {
-            guard let asset = project.asset(clip.assetID), let script = transcript(asset), !script.isEmpty else { continue }
-            out += blocks(for: clip, asset: asset, words: script.words, fixes: project.captionFixes?[asset.id] ?? [])
+            guard let asset = project.asset(clip.assetID) else { continue }
+            let script = layer.map { $0.transcripts[asset.id] } ?? transcript(asset)
+            guard let script, !script.isEmpty else { continue }
+            out += blocks(for: clip, asset: asset, words: script.words, fixes: layer == nil ? project.captionFixes?[asset.id] ?? [] : [])
         }
         out.sort { $0.start < $1.start }
         // Overlapping speech (two people at once): each caption gives way to the next.
@@ -181,7 +191,7 @@ enum CaptionLayout {
         var ends: [Int] = []
         var total = 0
         for (i, w) in run.enumerated() {
-            total += w.text.count + (i > 0 ? 1 : 0)
+            total += SubtitleText.width(w.text) + (i > 0 && SubtitleText.needsSpace(run[i - 1].text, w.text) ? 1 : 0)
             ends.append(total)
         }
         let byChars = Int((Double(total) / Double(maxChars)).rounded(.up))
@@ -197,7 +207,7 @@ enum CaptionLayout {
             var best: Int?, bestScore = Double.infinity
             for i in from...(run.count - (n - k) - 1) where run[i].source != run[i + 1].source {
                 var score = abs(Double(ends[i]) - target)
-                if run[i].text.hasSuffix(",") { score -= 6 }
+                if SubtitleText.endsClause(run[i].text) { score -= 6 }
                 if score < bestScore { bestScore = score; best = i }
             }
             guard let best else { break }
@@ -236,7 +246,7 @@ enum CaptionLayout {
             }
             let text = fix?.text ?? w.text
             guard !text.trimmingCharacters(in: .whitespaces).isEmpty, b > a else { continue }
-            entries.append(CaptionBlock.Word(start: a, end: b, text: text, source: w.start, covers: [w.start]))
+            entries.append(CaptionBlock.Word(start: a, end: b, text: text, source: w.start, covers: [w.start], cue: w.cue == true))
         }
         // A retyped word with several words in it: they share its time, by length.
         var heard: [CaptionBlock.Word] = []
@@ -246,25 +256,28 @@ enum CaptionLayout {
             let weights = parts.map { Double($0.count + 1) }
             let total = weights.reduce(0, +)
             var t = e.start
-            for (part, wt) in zip(parts, weights) {
+            for (k, (part, wt)) in zip(parts, weights).enumerated() {
                 let d = (e.end - e.start) * wt / total
-                heard.append(CaptionBlock.Word(start: t, end: t + d, text: part, source: e.source, covers: e.covers))
+                heard.append(CaptionBlock.Word(start: t, end: t + d, text: part, source: e.source, covers: e.covers, cue: k == 0 && e.cue))
                 t += d
             }
         }
 
         // Runs of talking: broken by a pause or the end of a sentence. Each run is then cut into as few
         // even phrases as keep each one short, so no word is left on its own.
+        // Subtitles brought in from a file keep their own lines: each starts where its line did.
+        let cued = heard.contains { $0.cue }
         var runs: [[CaptionBlock.Word]] = []
         for w in heard {
-            if let last = runs.last?.last, w.start - last.end < pause,
-               !(last.text.hasSuffix(".") || last.text.hasSuffix("?") || last.text.hasSuffix("!")) {
+            if cued {
+                if w.cue || runs.isEmpty { runs.append([w]) } else { runs[runs.count - 1].append(w) }
+            } else if let last = runs.last?.last, w.start - last.end < pause, !SubtitleText.endsSentence(last.text) {
                 runs[runs.count - 1].append(w)
             } else {
                 runs.append([w])
             }
         }
-        let groups = runs.flatMap(phrases)
+        let groups = cued ? runs : runs.flatMap(phrases)
 
         var out: [CaptionBlock] = []
         for (i, g) in groups.enumerated() {

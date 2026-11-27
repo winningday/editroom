@@ -85,7 +85,8 @@ enum CaptionRenderer {
             let s = NSMutableAttributedString()
             for (i, w) in words.enumerated() {
                 // A little wider than a plain space: the outline eats into the gap.
-                if i > 0 { s.append(NSAttributedString(string: " ", attributes: [.font: font, .kern: pt * 0.06])) }
+                // Chinese is written without spaces.
+                if i > 0, SubtitleText.needsSpace(words[i - 1], w) { s.append(NSAttributedString(string: " ", attributes: [.font: font, .kern: pt * 0.06])) }
                 var attrs: [NSAttributedString.Key: Any] = [.font: font, .paragraphStyle: para]
                 if fill {
                     attrs[.foregroundColor] = ns(i == lit ? style.highlightColor : style.textColor)

@@ -1983,6 +1983,8 @@ final class EditorModel: ObservableObject {
         var h = Hasher()
         h.combine(project.captionedClips)
         h.combine(project.captionFixes)
+        h.combine(project.captions?.layer)
+        h.combine(project.subtitleRevision)
         h.combine(transcriptVersion)
         let key = h.finalize()
         if let c = captionCache, c.key == key { return c.blocks }

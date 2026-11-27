@@ -7,18 +7,20 @@ import Speech
 /// What's said in a file: each word with its time in the file. Made once per file on this Mac (Apple's
 /// on-device speech recognition), in the background after import, and kept on disk, so Magic and Media
 /// search can use it at once and nothing is sent anywhere.
-struct Transcript: Codable, Equatable {
-    struct Word: Codable, Equatable {
+struct Transcript: Codable, Hashable {
+    struct Word: Codable, Hashable {
         var start: Double
         var end: Double
         var text: String
+        /// Starts a subtitle line of its own (words brought in from an SRT); nil for words that were heard.
+        var cue: Bool? = nil
     }
 
     var words: [Word]
     var language: String
 
     var isEmpty: Bool { words.isEmpty }
-    var text: String { words.map(\.text).joined(separator: " ") }
+    var text: String { SubtitleText.join(words.map(\.text)) }
 
     /// Stretches of talking: words closer than `gap` seconds run together.
     func speech(gap: Double = 0.45) -> [(start: Double, end: Double)] {

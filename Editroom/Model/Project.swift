@@ -117,6 +117,8 @@ struct Clip: Identifiable, Codable, Hashable {
     var ramp: SpeedRamp?
     /// A sound clip whose speech shows on the caption track.
     var captioned: Bool?
+    /// One camera of a multi-angle group (see Angles.swift): it can switch to another camera of the same moment.
+    var angleGroup: UUID?
 
     var isFreeze: Bool { freeze == true }
     var playsBackwards: Bool { reversed == true }
@@ -328,6 +330,13 @@ struct Project: Codable, Equatable {
     /// Files (or whole folders) in those folders taken out of the project, so they don't come back when
     /// the folder is next looked at.
     var hiddenMedia: [String]?
+    /// Subtitles brought in from files (a translation, say), which the caption track can show instead of
+    /// what's heard (see Subtitles.swift).
+    var subtitleLayers: [SubtitleLayer]?
+    /// Changes whenever a subtitle layer does, so the captions are laid out again.
+    var subtitleRevision: UUID?
+    /// Cameras of the same session, synced by their sound (see Angles.swift).
+    var angleGroups: [AngleGroup]?
 }
 
 struct Marker: Codable, Hashable, Identifiable {
