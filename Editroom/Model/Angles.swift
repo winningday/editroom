@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Accelerate)
+import Accelerate
+#endif
 
 // Several cameras filming the same session (a class from above, from the side, a face camera), synced by
 // their sound. The timeline stays an ordinary edit: one camera's clip at a time on the main track, and the
@@ -208,8 +211,12 @@ enum SoundSync {
                     let lo = max(0, -lag), hi = min(pa.count, pb.count - lag)
                     guard hi - lo >= minOverlap else { continue }
                     var s: Float = 0
+                    #if canImport(Accelerate)
+                    vDSP_dotpr(pa.baseAddress! + lo, 1, pb.baseAddress! + lo + lag, 1, &s, vDSP_Length(hi - lo))
+                    #else
                     var n = lo
                     while n < hi { s += pa[n] * pb[n + lag]; n += 1 }
+                    #endif
                     scores.append((lag, s / Float(hi - lo).squareRoot()))
                 }
             }
@@ -223,7 +230,9 @@ enum SoundSync {
     /// Seconds to add to a time in `reference` to find the same moment in `other`, from loudness sampled
     /// every `step` seconds (`levels` in dB or any log scale). Coarse first over `maxShift`, then fine.
     static func offset(reference: [Float], other: [Float], step: Double, maxShift: Double) -> (seconds: Double, clarity: Float)? {
-        let a = onsets(reference), b = onsets(other)
+        // The first half hour of the reference is plenty to find, and keeps a long class quick.
+        let keep = Int(1800 / step), reachSteps = Int(maxShift / step)
+        let a = onsets(Array(reference.prefix(keep))), b = onsets(Array(other.prefix(keep + reachSteps)))
         let factor = max(1, Int((0.1 / step).rounded()))
         let ca = coarse(a, by: factor), cb = coarse(b, by: factor)
         let coarseStep = step * Double(factor)

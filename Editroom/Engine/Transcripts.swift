@@ -129,10 +129,19 @@ final class Transcripts: ObservableObject {
         if working == url { stale.insert(url.path) }
     }
 
-    /// Speech recognition on this Mac needs macOS 26.
+    /// Hearing speech needs Whisper installed on this Mac, or macOS 26 (Apple's own speech recognition).
     static var available: Bool {
+        if Whisper.engineChoice != "apple", Whisper.find() != nil { return true }
+        if Whisper.engineChoice == "whisper" { return false }
         if #available(macOS 26, *) { return true }
         return false
+    }
+
+    /// Hears a file again (after changing the language or switching to Whisper): its saved transcript goes.
+    func redo(_ url: URL) {
+        try? FileManager.default.removeItem(at: file(for: url))
+        forget(url)
+        make(url, soon: true)
     }
 
     func transcript(for url: URL) -> Transcript? { made[url.path] ?? load(url) }
@@ -233,6 +242,9 @@ final class Transcripts: ObservableObject {
 
     /// Every word in the file's sound, with its time. Nil if it couldn't be read; empty if nothing's said.
     nonisolated static func transcribe(_ url: URL) async -> Transcript? {
+        // Whisper first when it's installed (any macOS, and strong at Chinese); Apple's if it fails.
+        if let whisper = Whisper.inUse, let t = await Whisper.transcribe(url, with: whisper) { return t }
+        if Whisper.engineChoice == "whisper" { return nil }
         #if canImport(Speech)
         if #available(macOS 26, *) {
             return try? await SpeechReader.read(url)
@@ -250,7 +262,14 @@ private enum SpeechReader {
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
             return Transcript(words: [], language: "")
         }
-        let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale.current) ?? Locale(identifier: "en-US")
+        // The language chosen in Settings › Subtitles, else the Mac's own.
+        let wanted: Locale = switch Whisper.language {
+        case "auto": Locale.current
+        case "zh": Locale(identifier: "zh-CN")
+        case "en": Locale(identifier: "en-US")
+        default: Locale(identifier: Whisper.language)
+        }
+        let locale = await SpeechTranscriber.supportedLocale(equivalentTo: wanted) ?? Locale(identifier: "en-US")
         let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [],
                                             attributeOptions: [.audioTimeRange])
         // The language's model, once per Mac.
