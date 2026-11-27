@@ -40,7 +40,7 @@ final class DubPipeline: ObservableObject {
         if let p = UserDefaults.standard.string(forKey: folderKey), !p.isEmpty {
             let u = URL(fileURLWithPath: (p as NSString).expandingTildeInPath)
             let t = isTranslator(u) ? u : u.appendingPathComponent("translator")
-            return isTranslator(t) ? t : nil
+            if isTranslator(t) { return t }
         }
         let parents = ["", "Documents", "Developer", "Projects", "code", "Code", "src", "GitHub", "Documents/GitHub", "Desktop"]
         for parent in parents {
@@ -70,6 +70,11 @@ final class DubPipeline: ObservableObject {
         }
         return nil
     }
+
+    /// What's missing, as last checked (checking starts programs, so it's never done while drawing).
+    @Published private(set) var missingTools: [String] = []
+
+    func refreshMissing() { missingTools = missing() }
 
     /// What's missing to run the pipeline, in plain words; empty when all's there.
     func missing() -> [String] {
@@ -111,7 +116,7 @@ final class DubPipeline: ObservableObject {
         let collected = OutputBox()
         out.fileHandleForReading.readabilityHandler = { [weak self] h in
             let d = h.availableData
-            if d.isEmpty { h.readabilityHandler = nil; return }
+            if d.isEmpty { h.readabilityHandler = nil; collected.finish(); return }
             collected.add(d)
             let s = String(decoding: d, as: UTF8.self)
             Task { @MainActor in
@@ -136,8 +141,8 @@ final class DubPipeline: ObservableObject {
                 c.resume(returning: -1)
             }
         }
-        // The last of the output lands.
-        try? await Task.sleep(nanoseconds: 200_000_000)
+        // The last of the output lands (the pipe closes after the program ends).
+        for _ in 0..<50 where !collected.finished { try? await Task.sleep(nanoseconds: 40_000_000) }
         return (status, collected.text)
     }
 
@@ -158,7 +163,11 @@ final class DubPipeline: ObservableObject {
             }
             return nil
         }
-        return (result?["result"] as? String) ?? out
+        guard let text = result?["result"] as? String else {
+            problem = "Claude Code stopped before finishing (\(result?["subtype"] as? String ?? "no result")). Try the step again."
+            return nil
+        }
+        return text
     }
 
     private func python(_ title: String, _ args: [String]) async -> (Int32, String) {
@@ -194,18 +203,37 @@ final class DubPipeline: ObservableObject {
         return q.exactCues(CaptionLayout.blocks(q) { model.media.transcript($0.id) })
     }
 
+    /// Rules every Claude step here keeps, so the files stay consistent for the dub and re-timing.
+    static let houseRules = """
+    Ground rules for this run, from Editroom: stay on the branch that's checked out now (don't switch branches \
+    mid-lesson). Assemble only from this lesson's JSON batches (delete any old /tmp/translations_*.json first, \
+    they could be another lesson's). Keep output/<stem>_en_raw.srt one for one with input/<name>_clean.srt: \
+    if an English line is removed or two are joined, make the same change in _clean.srt and renumber the JSON \
+    to match, because the re-timing step pairs them cue for cue.
+    """
+
     /// A file from the translator as a layer on the caption track (replacing one of the same name), shown.
+    /// Returns the cues as the layer shows them, to compare Maya's edits with later; nil if nothing showed.
     @discardableResult
-    private func bringIn(_ model: EditorModel, _ path: String, as name: String) -> Bool {
-        guard let cues = read(path) else { problem = "Couldn't find \(path) in the translator folder."; return false }
-        var placed = 0
-        model.mutate { p in placed = p.importSubtitles(timeline: cues, name: name).placed }
-        if placed == 0 { problem = "None of \(path)'s subtitles fell on a clip with sound." }
-        return placed > 0
+    private func bringIn(_ model: EditorModel, _ path: String, as name: String) -> [SRTCue.Saved]? {
+        guard let cues = read(path) else { problem = "Couldn't find \(path) in the translator folder."; return nil }
+        var placed = 0, missed = 0
+        model.mutate { p in (placed, missed) = p.importSubtitles(timeline: cues, name: name) }
+        if placed == 0 { problem = "None of \(path)'s subtitles fell on a clip with sound."; return nil }
+        if missed > 0 { log += "\n\(missed) of \(cues.count) lines in \(path) fall where there's no clip with sound, so they don't show (they're kept in the file).\n" }
+        guard let layer = model.project.layer(named: name) else { return nil }
+        return layerCues(model, layer: layer.id).map(\.saved)
     }
 
-    private func setJob(_ model: EditorModel, _ change: (inout DubJob) -> Void) {
-        model.mutate { p in if p.dubJob != nil { change(&p.dubJob!) } }
+    private static func cues(_ saved: [SRTCue.Saved]?) -> [SRTCue] { (saved ?? []).map { SRTCue(start: $0.start, end: $0.end, text: $0.text) } }
+
+    /// Changes the lesson's progress (never an undo step). Returns the job as it now is.
+    @discardableResult
+    private func setJob(_ model: EditorModel, _ change: (inout DubJob) -> Void) -> DubJob? {
+        guard var job = model.project.dubJob else { return nil }
+        change(&job)
+        model.setDubJob(job)
+        return job
     }
 
     /// The edit has changed since the Chinese was sent: the dub would fall out of step with it.
@@ -216,12 +244,13 @@ final class DubPipeline: ObservableObject {
 
     // MARK: The steps
 
-    /// Whatever the lesson's next step is. `approve` is Maya's yes at a gate.
+    /// Whatever the lesson's next step is. At a gate, this is Maya's yes.
     func next(_ model: EditorModel) async {
         problem = nil
         fixable = nil
         stopped = false
-        guard missing().isEmpty else { problem = missing().joined(separator: "\n"); return }
+        refreshMissing()
+        guard missingTools.isEmpty else { problem = missingTools.joined(separator: "\n"); return }
         guard let job = model.project.dubJob else { return await send(model) }
         switch job.stage {
         case .send: await send(model)
@@ -230,7 +259,8 @@ final class DubPipeline: ObservableObject {
         case .translate: await translate(model, job)
         case .reviewTranslation: await approveTranslation(model, job)
         case .audition: await audition(model, job)
-        case .reviewAudition: setJob(model) { $0.stage = .dub }; await dub(model, model.project.dubJob!)
+        case .reviewAudition:
+            if let j = setJob(model, { $0.stage = .dub }) { await dub(model, j) }
         case .dub: await dub(model, job)
         case .retime: await retime(model, job)
         case .deliver: await deliver(model, job)
@@ -240,7 +270,7 @@ final class DubPipeline: ObservableObject {
 
     /// Starts again from the Chinese now on the timeline (after the edit changed).
     func restart(_ model: EditorModel) async {
-        model.mutate { $0.dubJob = nil }
+        model.setDubJob(nil)
         await next(model)
     }
 
@@ -271,7 +301,7 @@ final class DubPipeline: ObservableObject {
         do { try write(cues, to: "input/\(name)") } catch { problem = "Couldn't write to the translator: \(error.localizedDescription)"; return }
         log += "\nSent \(cues.count) Chinese subtitles to input/\(name)\n"
         let job = DubJob(name: name, stem: stem, stage: .cleanup, cutStamp: DubPlan.cutStamp(model.project))
-        model.mutate { $0.dubJob = job }
+        model.setDubJob(job)
         await cleanup(model, job)
     }
 
@@ -279,36 +309,38 @@ final class DubPipeline: ObservableObject {
     private func cleanup(_ model: EditorModel, _ job: DubJob) async {
         let prompt = """
         A lesson from Editroom, Maya's video editor: input/\(job.name) was exported from her finished edit, so its \
-        timings match the video cut exactly. Do Job 0 only (SRT Cleanup), following CLAUDE.md exactly: read the \
+        timings match the video cut exactly. \(Self.houseRules) Do Job 0 only (SRT Cleanup), following CLAUDE.md exactly: read the \
         glossary, corrections and guides, then write input/\(job.clean). Do NOT translate and do NOT commit: Maya \
         checks and edits the cleaned Chinese in Editroom next (this is GATE A, and Editroom asks her). \
         End your reply with the report for Maya in Chinese: raw count, cleaned count, % reduction, what was merged \
         and dropped, and how many [待确认] flags.
         """
         guard let report = await claude("Cleaning up the Chinese (Job 0)", prompt) else { return }
-        guard bringIn(model, "input/\(job.clean)", as: DubPlan.cleanLayer) else { return }
-        setJob(model) { $0.stage = .reviewCleanup; $0.lastReport = report }
+        guard let shown = bringIn(model, "input/\(job.clean)", as: DubPlan.cleanLayer) else { return }
+        setJob(model) { $0.stage = .reviewCleanup; $0.lastReport = report; $0.deliveredClean = shown; $0.mayaEditedClean = nil }
     }
 
     /// Gate A passed: Maya's edits to the cleaned Chinese go back to the translator (hers win).
     private func approveCleanup(_ model: EditorModel, _ job: DubJob) async {
         guard let layer = model.project.layer(named: DubPlan.cleanLayer) else { problem = "The cleaned Chinese isn't on the caption track any more."; return }
-        let now = layerCues(model, layer: layer.id)
-        let before = read("input/\(job.clean)") ?? []
-        let edited = !DubPlan.edits(delivered: before, now: now).isEmpty
-        if edited {
-            do { try write(now, to: "input/\(job.clean)") } catch { problem = error.localizedDescription; return }
-            log += "\nMaya's edits saved to input/\(job.clean)\n"
+        // Only what she changed goes back: lines the timeline couldn't show stay as they are in the file.
+        let changes = DubPlan.edits(delivered: Self.cues(job.deliveredClean), now: layerCues(model, layer: layer.id))
+        if !changes.isEmpty {
+            let file = read("input/\(job.clean)") ?? []
+            do { try write(DubPlan.apply(changes, to: file), to: "input/\(job.clean)") } catch { problem = error.localizedDescription; return }
+            log += "\n\(changes.count) of Maya's edits saved to input/\(job.clean)\n"
         }
-        setJob(model) { $0.stage = .translate }
-        await translate(model, model.project.dubJob!, mayaEdited: edited)
+        guard let j = setJob(model, { $0.stage = .translate; $0.mayaEditedClean = (job.mayaEditedClean ?? false) || !changes.isEmpty }) else { return }
+        await translate(model, j)
     }
 
     /// 3. Job 1 by CLAUDE.md, then the English onto the caption track to read through.
-    private func translate(_ model: EditorModel, _ job: DubJob, mayaEdited: Bool = false) async {
+    private func translate(_ model: EditorModel, _ job: DubJob) async {
+        let mayaEdited = job.mayaEditedClean == true
         let prompt = """
         A lesson from Editroom, Maya's video editor. Maya approved the cleaned Chinese in input/\(job.clean) in \
         Editroom (GATE A passed)\(mayaEdited ? ", and edited it there herself: her wording and cuts win, mirror them" : ""). \
+        \(Self.houseRules) \
         Do Job 1 following CLAUDE.md exactly: translate it, keep the JSON batches in \(job.dubFolder)/translations/ \
         as well (later fixes regenerate from them), assemble output/\(job.enRaw) and output/\(job.en) with the \
         assembly snippet, run the Step 6 self-audit (zero dashes, one thought per entry, write for the ear because \
@@ -318,17 +350,15 @@ final class DubPipeline: ObservableObject {
         flagged for Maya (Patreon reframings, [待确认]), and whether the files reached main.
         """
         guard let report = await claude("Translating (Job 1)", prompt) else { return }
-        guard bringIn(model, "output/\(job.en)", as: DubPlan.englishLayer) else { return }
-        let delivered = read("output/\(job.en)") ?? []
-        setJob(model) { $0.stage = .reviewTranslation; $0.lastReport = report; $0.deliveredEnglish = delivered.map(\.saved) }
+        guard let shown = bringIn(model, "output/\(job.en)", as: DubPlan.englishLayer) else { return }
+        setJob(model) { $0.stage = .reviewTranslation; $0.lastReport = report; $0.deliveredEnglish = shown }
     }
 
     /// Gate B passed. Lines Maya changed go back to Claude, who fixes the translation itself (never the SRT by
     /// hand, per CLAUDE.md), then the audition runs.
     private func approveTranslation(_ model: EditorModel, _ job: DubJob) async {
         if let layer = model.project.layer(named: DubPlan.englishLayer), let delivered = job.deliveredEnglish {
-            let changes = DubPlan.edits(delivered: delivered.map { SRTCue(start: $0.start, end: $0.end, text: $0.text) },
-                                        now: layerCues(model, layer: layer.id))
+            let changes = DubPlan.edits(delivered: Self.cues(delivered), now: layerCues(model, layer: layer.id))
             if !changes.isEmpty {
                 let list = changes.map { e in
                     "- at \(SRT.timestamp(e.start)): \"\(e.before)\" → " + (e.after.isEmpty ? "(removed)" : "\"\(e.after)\"")
@@ -336,19 +366,19 @@ final class DubPipeline: ObservableObject {
                 let prompt = """
                 Maya read output/\(job.en) in Editroom and changed these English subtitles (time, before → after):
                 \(list)
-                Apply each change to the translation itself: the JSON batches in \(job.dubFolder)/translations/ (or \
-                /tmp), then regenerate output/\(job.enRaw) and output/\(job.en) with the assembly snippet, so the \
-                subtitles and the dub say the same thing. Keep every CLAUDE.md rule (no dashes, one thought per \
-                entry). Then follow the DELIVERY RULE. Reply with one line per change saying what you did.
+                Apply each change to the translation itself: the JSON batches in \(job.dubFolder)/translations/, then \
+                regenerate output/\(job.enRaw) and output/\(job.en) with the assembly snippet, so the subtitles and the \
+                dub say the same thing. A removed line is removed from input/\(job.clean) too. \(Self.houseRules) Keep \
+                every CLAUDE.md rule (no dashes, one thought per entry). Then follow the DELIVERY RULE. Reply with one \
+                line per change saying what you did.
                 """
                 guard let report = await claude("Applying Maya's English changes", prompt) else { return }
-                guard bringIn(model, "output/\(job.en)", as: DubPlan.englishLayer) else { return }
-                let delivered = read("output/\(job.en)") ?? []
-                setJob(model) { $0.lastReport = report; $0.deliveredEnglish = delivered.map(\.saved) }
+                guard let shown = bringIn(model, "output/\(job.en)", as: DubPlan.englishLayer) else { return }
+                setJob(model) { $0.lastReport = report; $0.deliveredEnglish = shown }
             }
         }
-        setJob(model) { $0.stage = .audition }
-        await audition(model, model.project.dubJob!)
+        guard let j = setJob(model, { $0.stage = .audition }) else { return }
+        await audition(model, j)
     }
 
     /// 4. The first lines voiced, laid on the timeline under the edit for Maya to hear (gate C). Shares its cache
@@ -391,8 +421,8 @@ final class DubPipeline: ObservableObject {
         }
         guard let wav = newestDub(in: job.dubFolder) else { problem = "The dub made no sound file."; return }
         layDub(model, wav)
-        setJob(model) { $0.stage = .retime; $0.lastReport = report(job.dubFolder) }
-        await retime(model, model.project.dubJob!)
+        guard let j = setJob(model, { $0.stage = .retime; $0.lastReport = report(job.dubFolder) }) else { return }
+        await retime(model, j)
     }
 
     /// Runs srt_dubber. A stop from its fragment check is offered to Claude to fix.
@@ -400,7 +430,8 @@ final class DubPipeline: ObservableObject {
         let (status, out) = await python(title, ["-m", "srt_dubber"] + args)
         guard status == 0 else {
             if stopped { return false }
-            if out.localizedCaseInsensitiveContains("fragment") {
+            // Its fragment check (pipeline.fragment_warnings); not its Job 0 check, which also says "fragment".
+            if out.localizedCaseInsensitiveContains("look like a fragmented sentence") {
                 fixable = "The dubber stopped on lines that would sound broken spoken aloud (a sentence cut in two). Claude can rejoin them per DUBBING.md, then try again."
             } else {
                 problem = "The dubber stopped:\n" + String(out.suffix(1500))
@@ -422,9 +453,9 @@ final class DubPipeline: ObservableObject {
         If it flagged fragments, rejoin each flagged cue into one connected sentence (DUBBING.md, "Dubbing exposes \
         translation problems that subtitles hide"). If \(job.dubFolder)/shorten.json lists lines, shorten each to about \
         its target_chars keeping every instruction (DUBBING.md 3b). Fix the translation itself (the JSON batches in \
-        \(job.dubFolder)/translations/ or /tmp) and regenerate output/\(job.enRaw) and output/\(job.en) with the \
-        assembly snippet, so subtitles and voice match. Don't run the dubber; Editroom runs it again. Reply with one \
-        line per change.
+        \(job.dubFolder)/translations/) and regenerate output/\(job.enRaw) and output/\(job.en) with the assembly \
+        snippet, so subtitles and voice match. Rejoining cues means rejoining the same cues in input/\(job.clean). \
+        \(Self.houseRules) Don't run the dubber; Editroom runs it again. Reply with one line per change.
         """
         guard let report = await claude("Fixing lines for the dub", prompt) else { return }
         bringIn(model, "output/\(job.en)", as: DubPlan.englishLayer)
@@ -501,8 +532,13 @@ final class DubPipeline: ObservableObject {
 
     /// The dub on the timeline from 0, the camera sound turned down under it; an earlier dub of this lesson goes.
     private func layDub(_ model: EditorModel, _ wav: URL) {
-        let old = Set(model.project.assets.filter { $0.path.contains("/dub/") && $0.path.hasSuffix("_dub.wav") && $0.path.contains(model.project.dubJob?.stem ?? "\u{0}") }.map(\.id))
+        // This lesson's dubs only (audition or full), by their exact file name.
+        let name = "\(model.project.dubJob?.stem ?? "\u{0}")_en_dub.wav"
+        let old = Set(model.project.assets.filter { $0.path.contains("/dub/") && ($0.path as NSString).lastPathComponent == name }.map(\.id))
+        // Forgotten too, so a dub made again at the same path comes in fresh (its new length and sound).
+        for id in old { model.media.forget(id) }
         model.mutate { p in
+            p.assets.removeAll { old.contains($0.id) }
             let gone = Set(p.clips.filter { old.contains($0.assetID ?? UUID()) }.map(\.trackID))
             p.clips.removeAll { old.contains($0.assetID ?? UUID()) }
             for t in gone where !p.clips.contains(where: { $0.trackID == t }) { p.removeTrack(t) }
@@ -529,4 +565,7 @@ private final class OutputBox: @unchecked Sendable {
     private var data = Data()
     func add(_ d: Data) { lock.lock(); data.append(d); if data.count > 400_000 { data = data.suffix(200_000) }; lock.unlock() }
     var text: String { lock.lock(); defer { lock.unlock() }; return String(decoding: data, as: UTF8.self) }
+    private var ended = false
+    func finish() { lock.lock(); ended = true; lock.unlock() }
+    var finished: Bool { lock.lock(); defer { lock.unlock() }; return ended }
 }
